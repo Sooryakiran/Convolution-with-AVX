@@ -1,6 +1,7 @@
 #include <stdlib.h>
 #include <iostream>
 #include "util.h"
+#include <immintrin.h>
 
 Convolution::Convolution(int m, int c, int r, int s, int sx, int sy, int px, int py)
 {
@@ -58,7 +59,26 @@ fmap* Convolution::conv2d_optimized(fmap* input_features)
 
 fmap* Linear::linear(fmap* input_features)
 {
-  return NULL;
+  // M output size
+  // L input size
+  // output L = M*weights
+  int N = input_features->dim1;
+  fmap *output_features;
+  output_features->dim1 = N;
+  output_features->dim2 = output_features->dim3 = 1;
+  output_features->dim4 = M;
+  output_features->data = (DATA*) malloc(N*M * sizeof(DATA));
+
+  DATA (*temp)[1][1][M] = (DATA (*)[1][1][M])output_features->data;
+  for(int n=1; n<N; n++){  
+    for(int m=1; m<M; m++){
+      temp[n][1][1][m];
+      for(int l=1; l<L; l++){
+        temp[n][1][1][m] += weights[1][1][m][l]*input_features->data[n][1][1][l];
+      }
+    }
+  }
+  return output_features;
 }
 
 fmap* Linear::linear_optimized(fmap* input_features)
@@ -68,7 +88,7 @@ fmap* Linear::linear_optimized(fmap* input_features)
 
 void relu(fmap* input_features)
 {
-
+  // return NULL;
 }
 
 fmap* maxpool_2d(fmap* input_features, int R, int S, int Sx, int Sy)
