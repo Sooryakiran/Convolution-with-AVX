@@ -43,12 +43,6 @@ fmap new_tensor(int N, int C, int H, int W){
   return input;
 }
 
-// fmap* new_tensor_ptr(int N, int C, int H, int W){
-//   fmap xnew_tensor(N, C, H, W)
-//   return input;
-// }
-
-
 fmap* Convolution::conv_2d(fmap* input_features)
 {
   // Start time
@@ -93,9 +87,9 @@ fmap* Convolution::conv_2d(fmap* input_features)
       // For each output point
       for(int x=0; x<F; x+=1)for(int y=0; y<E; y+=1)for(int c=0; c<C; c++){
         temp[n][m][y][x] = 0;
-        for(int i=0; i<R; i++){
-          for(int j=0; j<S; j++){
-            temp[n][m][y][x] += temp_inputs[n][c][Sy*y+j][Sx*x+i] * temp_weights[m][c][i][j];
+        for(int j=0; j<S; j++){
+          for(int i=0; i<R; i++){
+            temp[n][m][y][x] += temp_inputs[n][c][Sy*y+j][Sx*x+i] * temp_weights[m][c][j][i];
           }
         }
       }
@@ -120,17 +114,9 @@ fmap* Convolution::conv2d_IS(fmap* input_features)
 
 fmap* Convolution::conv2d_OS(fmap* input_features)
 {
-  return NULL;
-}
+  // Output Stationary
 
-fmap* Convolution::conv2d_WS(fmap* input_features)
-{
-  return NULL;
-}
-
-fmap* Convolution::conv2d_optimized(fmap* input_features)
-{
-    // Start time
+  // Start time
   clock_t start, end;
   start = clock();
 
@@ -142,9 +128,6 @@ fmap* Convolution::conv2d_optimized(fmap* input_features)
   // Sy is stride y
   // Px is padding x
   // Py is padding y
-
-
-  
   
   // Calculate dimensions
   int N = input_features->dim1;
@@ -165,16 +148,206 @@ fmap* Convolution::conv2d_optimized(fmap* input_features)
   DATA (*temp_weights)[C][R][S] = (DATA (*)[C][R][S])weights;               // M x C x R x S
   DATA (*temp_inputs)[C][H][W] = (DATA (*)[C][H][W])input_features->data;   // N x C x H x W
   
+  // int SIZE = R*S;
   // For all batches
+
+  __m256 mm_inputs, mm_weights, partials, partials_;
+  __m256i mask;
+  DATA partials_array[8];
+  int start_idx;
+  DATA zero[8];
+  for(int i=0; i<8; i++)zero[i]=0;
+  
   for(int n=0; n<N; n++){
     // For all filters
     for(int m=0; m<M; m++){
       // For each output point
       for(int x=0; x<F; x+=1)for(int y=0; y<E; y+=1)for(int c=0; c<C; c++){
         temp[n][m][y][x] = 0;
-        for(int i=0; i<R; i++){
+        partials = _mm256_load_ps((float const*) &zero);
+        for(int i=0; i<R/8 + 1; i++){
+          start_idx = i*8 - R;
+          mask = _mm256_set_epi32(start_idx+7, start_idx+6, start_idx+5, start_idx+4, start_idx+3, start_idx+2, start_idx+1, start_idx);
+            
           for(int j=0; j<S; j++){
-            temp[n][m][y][x] += temp_inputs[n][c][Sy*y+j][Sx*x+i] * temp_weights[m][c][i][j];
+            mm_inputs = _mm256_maskload_ps((float const*) &temp_inputs[n][c][Sy*y+j][i*8], mask);
+            mm_weights = _mm256_maskload_ps((float const*) &temp_weights[m][c][j][i*8], mask);
+
+            partials_ = _mm256_mul_ps(mm_inputs, mm_weights);
+            partials = _mm256_add_ps(partials, partials_);
+           
+          
+          }
+          _mm256_storeu_ps((float*) &partials_array, partials);
+          for(int k=0; k<8; k++){
+            temp[n][m][y][x] += partials_array[k];
+          }
+        }
+      }
+    }
+  }
+  
+  // Free inputs
+  input_features =  NULL;
+  free(input_features);
+  
+  // End time
+  end = clock();
+  exec_time = double(end-start) / double(CLOCKS_PER_SEC);
+  
+  return output_features;
+
+}
+
+fmap* Convolution::conv2d_WS(fmap* input_features)
+{
+  // Output Stationary
+
+  // Start time
+  clock_t start, end;
+  start = clock();
+
+  // Batches
+  // M is the number of filters
+  // C is the number of channels
+  // R x S is the filter size
+  // Sx is stride x
+  // Sy is stride y
+  // Px is padding x
+  // Py is padding y
+  
+  // Calculate dimensions
+  int N = input_features->dim1;
+  int H = input_features->dim3;
+  int W = input_features->dim4;
+  int E = int((H + 2*Py-S)/Sy + 1);
+  int F = int((W + 2*Px-R)/Sx + 1);
+
+  // Pad inputs
+  input_features = padding_2d(input_features, Px, Py);
+  
+  // Allocate output fmap
+  fmap* output_features = (fmap*) malloc(sizeof(new_tensor(N, M, E, F)));
+  *output_features = new_tensor(N, M, E, F);
+  
+  // cast all data into easily interpretable form
+  DATA (*temp)[M][E][F] = (DATA (*)[M][E][F])output_features->data;         // N x M x E x F
+  DATA (*temp_weights)[C][R][S] = (DATA (*)[C][R][S])weights;               // M x C x R x S
+  DATA (*temp_inputs)[C][H][W] = (DATA (*)[C][H][W])input_features->data;   // N x C x H x W
+  
+  // int SIZE = R*S;
+  // For all batches
+
+  __m256 mm_inputs, mm_weights, partials, partials_;
+  __m256i mask;
+  DATA partials_array[8];
+  int start_idx;
+  DATA zero[8];
+  for(int i=0; i<8; i++)zero[i]=0;
+  
+  for(int m=0; m<M; m++){
+    for(int j=0; j<S; j++){
+      for(int c=0; c<C; c++){
+        for(int i=0; i<R/8; i++){
+          start_idx = i*8 - R;
+          mask = _mm256_set_epi32(start_idx+7, start_idx+6, start_idx+5, start_idx+4, start_idx+3, start_idx+2, start_idx+1, start_idx);
+          mm_weights = _mm256_maskload_ps((float const*) &temp_weights[m][c][j][i*8], mask);
+          for(int n=0; n<N; n++){
+            for(int y=0; y<E; y++)for(int x=0; x<F; x++){
+              mm_inputs = _mm256_maskload_ps((float const*) &temp_inputs[n][c][Sy*y+j][i*8], mask);
+              partials = _mm256_mul_ps(mm_inputs, mm_weights);
+              _mm256_storeu_ps((float*) &partials_array, partials);
+              for(int k=0; k<8; k++){
+                temp[n][m][y][x] += partials_array[k];
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+  
+  // Free inputs
+  input_features =  NULL;
+  free(input_features);
+  
+  // End time
+  end = clock();
+  exec_time = double(end-start) / double(CLOCKS_PER_SEC);
+  
+  return output_features;
+
+}
+
+fmap* Convolution::conv2d_optimized(fmap* input_features)
+{
+  // Output Stationary
+
+  // Start time
+  clock_t start, end;
+  start = clock();
+
+  // Batches
+  // M is the number of filters
+  // C is the number of channels
+  // R x S is the filter size
+  // Sx is stride x
+  // Sy is stride y
+  // Px is padding x
+  // Py is padding y
+  
+  // Calculate dimensions
+  int N = input_features->dim1;
+  int H = input_features->dim3;
+  int W = input_features->dim4;
+  int E = int((H + 2*Py-S)/Sy + 1);
+  int F = int((W + 2*Px-R)/Sx + 1);
+
+  // Pad inputs
+  input_features = padding_2d(input_features, Px, Py);
+  
+  // Allocate output fmap
+  fmap* output_features = (fmap*) malloc(sizeof(new_tensor(N, M, E, F)));
+  *output_features = new_tensor(N, M, E, F);
+  
+  // cast all data into easily interpretable form
+  DATA (*temp)[M][E][F] = (DATA (*)[M][E][F])output_features->data;         // N x M x E x F
+  DATA (*temp_weights)[C][R][S] = (DATA (*)[C][R][S])weights;               // M x C x R x S
+  DATA (*temp_inputs)[C][H][W] = (DATA (*)[C][H][W])input_features->data;   // N x C x H x W
+  
+  // int SIZE = R*S;
+  // For all batches
+
+  __m256 mm_inputs, mm_weights, partials, partials_;
+  __m256i mask;
+  DATA partials_array[8];
+  int start_idx;
+  DATA zero[8];
+  for(int i=0; i<8; i++)zero[i]=0;
+  
+  for(int n=0; n<N; n++){
+    // For all filters
+    for(int m=0; m<M; m++){
+      // For each output point
+      for(int x=0; x<F; x+=1)for(int y=0; y<E; y+=1)for(int c=0; c<C; c++){
+        temp[n][m][y][x] = 0;
+        partials = _mm256_load_ps((float const*) &zero);
+        for(int i=0; i<R/8 + 1; i++){
+          start_idx = i*8 - R;
+          mask = _mm256_set_epi32(start_idx+7, start_idx+6, start_idx+5, start_idx+4, start_idx+3, start_idx+2, start_idx+1, start_idx);
+            
+          for(int j=0; j<S; j++){
+            mm_inputs = _mm256_maskload_ps((float const*) &temp_inputs[n][c][Sy*y+j][i*8], mask);
+            mm_weights = _mm256_maskload_ps((float const*) &temp_weights[m][c][j][i*8], mask);
+
+            partials_ = _mm256_mul_ps(mm_inputs, mm_weights);
+            partials = _mm256_add_ps(partials, partials_);
+           
+          
+          }
+          _mm256_storeu_ps((float*) &partials_array, partials);
+          for(int k=0; k<8; k++){
+            temp[n][m][y][x] += partials_array[k];
           }
         }
       }
@@ -254,7 +427,7 @@ fmap* Linear::linear_optimized(fmap* input_features)
   // Computation
 
   __m256 mm_inputs, mm_weights, partials;
-  int32_t weights_array[8], input_array[8], partials_array[8];
+  DATA weights_array[8], input_array[8], partials_array[8];
   for(int n=0; n<N; n++){  
     for(int l=0; l<L; l++){
       temp[n][l]=0;
@@ -270,7 +443,7 @@ fmap* Linear::linear_optimized(fmap* input_features)
         partials = _mm256_mul_ps(mm_inputs, mm_weights);
         _mm256_storeu_ps((float*) &partials_array, partials);
         for(int i=0; i<8; i++){
-          temp[n][l] += partials[i];
+          temp[n][l] += partials_array[i];
         }
       }
 
