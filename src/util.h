@@ -1,6 +1,6 @@
 #include <stdint.h>
 
-//The datatype of each element - 8 bit signed integer
+//The datatype of each element - 32 bit signed integer
 typedef int32_t DATA;
 
 //Data structure to hold input feature map / weight filters / output feature map
@@ -75,3 +75,9 @@ void relu(fmap* input_features);
 //For MaxPool2D, similar to CONV and FC, allocate memory for output feature map, perform computation
 //and free input feature map. Finally, return the created output feature map.
 fmap* maxpool_2d(fmap* input_features, int R, int S, int Sx, int Sy);
+
+// Create new tensor object of the given size
+fmap new_tensor(int N, int C, int H, int W);
+
+// 2D padding for convolution
+fmap* padding_2d(fmap* input_features, int Px, int Py);
