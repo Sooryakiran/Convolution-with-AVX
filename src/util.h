@@ -1,7 +1,7 @@
 #include <stdint.h>
 
 //The datatype of each element - 32 bit signed integer
-typedef int32_t DATA;
+typedef float DATA;
 
 //Data structure to hold input feature map / weight filters / output feature map
 typedef struct _fmap{
@@ -38,6 +38,8 @@ class Convolution : public Layer
   fmap* conv2d_OS(fmap* input_features);//Output stationary
   fmap* conv2d_WS(fmap* input_features);//Weight stationary
   fmap* conv2d_optimized(fmap* input_features);//Optimized convolution
+
+  fmap* conv2d_tiled(fmap* input_features, int tile_size); //Tiled convolution
 };
 
 class Linear : public Layer

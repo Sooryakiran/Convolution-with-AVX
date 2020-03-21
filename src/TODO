@@ -3,5 +3,16 @@ TODO
 DONE Linear Optimized
 DONE Conv Optimized
 DONE OS conv
+DONE WS conv
 DONE IS conv
-WS conv
+Tiling
+
+Report
+======
+
+DONE Plot Linear comparison
+DONE Conv2d explaination
+
+DONE Bottleneck analysis
+DONE Alexnet plots
+
