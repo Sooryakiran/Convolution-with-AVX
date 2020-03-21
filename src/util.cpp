@@ -87,20 +87,41 @@ fmap* Convolution::conv2d_tiled(fmap* input_features, int tile_size){
   // for each tile
   for(int yt=0; yt<E/tile_size + 1; yt++){
     for(int xt=0; xt<F/tile_size + 1; xt++){
-      // output maps for xt will be from xt*tile_size to min(xt*(tile_size+1), F)
-      // output maps fot yt will be from yt*tile_size to min(yt*(tile_size+1), E)
-      int Xmin = xt*tile_size, Xmax = min(xt*(tile_size+1), F), Ymin = yt*tile_size, Ymax = min(yt*(tile_size + 1), E);
+      // output maps for xt will be from xt*tile_size to min((xt+1)*tile_size, F)
+      // output maps fot yt will be from yt*tile_size to min((yt+1)*tile_size, E)
+      int Xmin = xt*tile_size, Xmax = min((xt+1)*tile_size, F), Ymin = yt*tile_size, Ymax = min((yt+1)*tile_size, E);
 
       // this maps to input as from Xmin*Sx to Xmax*Sx + S
       // this maps to input as from Ymin*Sx to Ymax*Sx + R
       int Xmin_inp = Sx*Xmin, Xmax_inp = Xmax*Sx + S, Ymin_inp = Sy*Ymin, Ymax_inp = Sy*Ymax + R;
       
-
-      // Get tile input fmap
-      fmap* input_tile = (fmap*) malloc(sizeof(new_tensor(N, M, Ymax-Ymin, Xmax-Xmin)));
-      *input_tile = new_tensor(N, M, Ymax-Ymin, Xmax-Xmin);
+      fmap* input_tile = (fmap*) malloc(sizeof(new_tensor(N, C, Ymax-Ymin, Xmax-Xmin)));
+      *input_tile = new_tensor(N, C, Ymax-Ymin, Xmax-Xmin);
+      DATA (*temp_input_tile)[C][Ymax-Ymin][Xmax-Xmin] = (DATA (*)[C][Ymax-Ymin][Xmax-Xmin])input_features->data;   // N x C x H x W
       
+      for(int n=0; n<N; n++){
+        for(int c=0; c<C; c++){
+          for(int y=Ymin_inp; y<Ymax_inp; y++){
+            for(int x=Xmin_inp; x<Xmax_inp; x++){
+              temp_input_tile[n][c][y-Ymin_inp][x-Xmin_inp] = temp_inputs[n][c][y][x];
+            }
+          }
+        }
+      }
 
+      fmap* output_tiles = this->conv2d_tiled_aux(input_tile);
+      DATA (*temp_output_tiles)[M][Ymax-Ymin][Xmax-Xmin] = (DATA (*)[M][Ymax-Ymin][Xmax-Xmin])output_tiles->data; 
+      
+      // Write output
+      for(int n=0; n<N; n++){
+        for(int m=0; m<M; m++){
+          for(int y=0; y<Ymax-Ymin; y++){
+            for(int x=0; x<Xmax-Xmin; x++){
+              temp[n][m][yt*tile_size+y][xt*tile_size+x] = temp_output_tiles[n][m][y][x];
+            }
+          }
+        }
+      }
     }
   }
 
@@ -111,6 +132,86 @@ fmap* Convolution::conv2d_tiled(fmap* input_features, int tile_size){
   end = clock();
   exec_time = double(end-start) / double(CLOCKS_PER_SEC);
 
+  return output_features;
+}
+
+fmap* Convolution::conv2d_tiled_aux(fmap* input_features)
+{
+  // Output Stationary without padding and time logging
+
+  
+  // Batches
+  // M is the number of filters
+  // C is the number of channels
+  // R x S is the filter size
+  // Sx is stride x
+  // Sy is stride y
+  // Px is padding x
+  // Py is padding y
+  
+  // Calculate dimensions
+  int N = input_features->dim1;
+  int H = input_features->dim3;
+  int W = input_features->dim4;
+  int E = int((H + 2*Py-S)/Sy + 1);
+  int F = int((W + 2*Px-R)/Sx + 1);
+
+  // Pad inputs
+  // input_features = padding_2d(input_features, Px, Py);
+  
+  // Allocate output fmap
+  fmap* output_features = (fmap*) malloc(sizeof(new_tensor(N, M, E, F)));
+  *output_features = new_tensor(N, M, E, F);
+  
+  // cast all data into easily interpretable form
+  DATA (*temp)[M][E][F] = (DATA (*)[M][E][F])output_features->data;         // N x M x E x F
+  DATA (*temp_weights)[C][R][S] = (DATA (*)[C][R][S])weights;               // M x C x R x S
+  DATA (*temp_inputs)[C][H][W] = (DATA (*)[C][H][W])input_features->data;   // N x C x H x W
+  
+  // int SIZE = R*S;
+  // For all batches
+
+  __m256 mm_inputs, mm_weights, partials, partials_;
+  __m256i mask;
+  DATA partials_array[8];
+  int start_idx;
+  DATA zero[8];
+  for(int i=0; i<8; i++)zero[i]=0;
+  
+  for(int n=0; n<N; n++){
+    // For all filters
+    for(int m=0; m<M; m++){
+      // For each output point
+      for(int x=0; x<F; x+=1)for(int y=0; y<E; y+=1)for(int c=0; c<C; c++){
+        temp[n][m][y][x] = 0;
+        partials = _mm256_load_ps((float const*) &zero);
+        for(int i=0; i<R/8 + 1; i++){
+          start_idx = i*8 - R;
+          mask = _mm256_set_epi32(start_idx+7, start_idx+6, start_idx+5, start_idx+4, start_idx+3, start_idx+2, start_idx+1, start_idx);
+            
+          for(int j=0; j<S; j++){
+            mm_inputs = _mm256_maskload_ps((float const*) &temp_inputs[n][c][Sy*y+j][i*8], mask);
+            mm_weights = _mm256_maskload_ps((float const*) &temp_weights[m][c][j][i*8], mask);
+
+            partials_ = _mm256_mul_ps(mm_inputs, mm_weights);
+            partials = _mm256_add_ps(partials, partials_);
+           
+          
+          }
+          _mm256_storeu_ps((float*) &partials_array, partials);
+          for(int k=0; k<8; k++){
+            temp[n][m][y][x] += partials_array[k];
+          }
+        }
+      }
+    }
+  }
+  
+  // Free inputs
+  input_features =  NULL;
+  free(input_features);
+  
+  
   return output_features;
 }
 
@@ -816,17 +917,18 @@ fmap* AlexNet::forward_pass(fmap* input_features)
   start = clock();
 
   fmap* temp = input_features;
-  temp = conv_layers[0]->conv_2d(temp);
+  temp = conv_layers[0]->conv2d_optimized(temp);
   relu(temp);
   temp = maxpool_2d(temp, 3, 3, 2, 2);
-  temp = conv_layers[1]->conv_2d(temp);
+  // temp = conv_layers[1]->conv2d_tiled(temp, 7);
+  temp = conv_layers[1]->conv2d_optimized(temp);
   relu(temp);
   temp = maxpool_2d(temp, 3, 3, 2, 2);
-  temp = conv_layers[2]->conv_2d(temp);
+  temp = conv_layers[2]->conv2d_optimized(temp);
   relu(temp);
-  temp = conv_layers[3]->conv_2d(temp);
+  temp = conv_layers[3]->conv2d_optimized(temp);
   relu(temp);
-  temp = conv_layers[4]->conv2d_IS(temp);
+  temp = conv_layers[4]->conv2d_optimized(temp);
   relu(temp);
   temp = maxpool_2d(temp, 3, 3, 2, 2);
 
@@ -834,11 +936,11 @@ fmap* AlexNet::forward_pass(fmap* input_features)
   temp->dim2 = lin_dim;
   temp->dim3 = temp->dim4 = 1;
 
-  temp = linear_layers[0]->linear(temp);
+  temp = linear_layers[0]->linear_optimized(temp);
   relu(temp);
-  temp = linear_layers[1]->linear(temp);
+  temp = linear_layers[1]->linear_optimized(temp);
   relu(temp);
-  temp = linear_layers[2]->linear(temp);
+  temp = linear_layers[2]->linear_optimized(temp);
   relu(temp);
 
   end = clock();

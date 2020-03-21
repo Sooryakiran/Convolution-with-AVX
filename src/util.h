@@ -40,6 +40,7 @@ class Convolution : public Layer
   fmap* conv2d_optimized(fmap* input_features);//Optimized convolution
 
   fmap* conv2d_tiled(fmap* input_features, int tile_size); //Tiled convolution
+  fmap* conv2d_tiled_aux(fmap* input_features);
 };
 
 class Linear : public Layer

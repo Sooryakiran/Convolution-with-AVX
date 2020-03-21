@@ -172,6 +172,32 @@ int conv_test_optim()
 }
 
 
+int conv_test_tile()
+{
+  int N = 1;
+  int C = 3;
+  int H = 227;
+  int W = 227;
+ 
+
+  fmap input = new_tensor(N, C, H, W);
+  DATA (*temp)[C][H][W] = (DATA (*)[C][H][W])input.data;
+
+  for(int i=0; i<N; i++)
+    for(int j=0; j<C; j++)
+      for(int k=0; k<H; k++)
+        for(int l=0; l<W; l++)
+          temp[i][j][k][l] = (i*C*H*W+j*H*W+k*W+l)%256;
+
+  std::cout<<input.dim2<<std::endl;
+  Convolution *conv;
+  conv = new Convolution(1, 3, 5, 5, 1, 1, 2, 2);
+  fmap* output = conv->conv2d_tiled(&input, 9);
+  // std::cout<<output->dim1<<','<<output->dim2<<','<<output->dim3<<','<<output->dim4<<std::endl;
+  std::cout<<"Conv OS:"<<conv->exec_time<<std::endl;
+  return 0;
+}
+
 int relu_test()
 {
   int N = 4;
@@ -197,10 +223,11 @@ int relu_test()
 
 
 int main(){
-  conv_test();
-  conv_test_optim();
-  conv_test_WS();
-  conv_test_IS();
+  conv_test_tile();
+  // conv_test();
+  // conv_test_optim();
+  // conv_test_WS();
+  // conv_test_IS();
   // linear_test();
   // linear_optim_test();
   return 0;
