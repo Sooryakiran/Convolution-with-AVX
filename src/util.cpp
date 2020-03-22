@@ -893,7 +893,6 @@ fmap* maxpool_2d(fmap* input_features, int R, int S, int Sx, int Sy)
   // @param S: Pool window size in X dimensions
 
   // Calculate output size
-
   int N = input_features->dim1;
   int C = input_features->dim2;
   int H = input_features->dim3;
@@ -903,10 +902,10 @@ fmap* maxpool_2d(fmap* input_features, int R, int S, int Sx, int Sy)
 
   // Allocate output fmap
   fmap* output_features = (fmap*) malloc(sizeof(new_tensor(N, C, E, F)));
-  *output_features = new_tensor(N, C, E, F);
+  *output_features      = new_tensor(N, C, E, F);
   
   // cast all data into easily interpretable form
-  DATA (*temp)[C][E][F] = (DATA (*)[C][E][F])output_features->data;         // N x M x E x F
+  DATA (*temp)[C][E][F]        = (DATA (*)[C][E][F])output_features->data;         // N x M x E x F
   DATA (*temp_inputs)[C][H][W] = (DATA (*)[C][H][W])input_features->data;   // N x C x H x W  
 
   int max_val = 0;
