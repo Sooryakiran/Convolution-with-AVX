@@ -920,7 +920,7 @@ fmap* AlexNet::forward_pass(fmap* input_features)
   temp = conv_layers[0]->conv2d_optimized(temp);
   relu(temp);
   temp = maxpool_2d(temp, 3, 3, 2, 2);
-  // temp = conv_layers[1]->conv2d_tiled(temp, 7);
+  // temp = conv_layers[1]->conv2d_tiled(temp, 28);
   temp = conv_layers[1]->conv2d_optimized(temp);
   relu(temp);
   temp = maxpool_2d(temp, 3, 3, 2, 2);
