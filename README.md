@@ -1,4 +1,4 @@
-=================================================================
+
 	CS 6886: Systems Engineering for Deep Learning	
 =================================================================
 
@@ -24,6 +24,7 @@ To run dummy inference on alexnet 100 times,
 Directory Structure
 ===================
 
+```
 .
 ├── Figures		     // Directory containing all figures
 │   └── ...	
@@ -44,6 +45,6 @@ Directory Structure
     │				layers
     ├── util.cpp	     // Main implimentation of layers
     └── util.h		     // Header file for layer definitions
-
+```
 =================================================================
 
