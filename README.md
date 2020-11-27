@@ -1,6 +1,6 @@
+# Convolutional Neural Networks implimentation using intel AVX instructions
 
-	CS 6886: Systems Engineering for Deep Learning	
-=================================================================
+## CS 6886: Systems Engineering for Deep Learning	
 
 Assignment 2
 Submitted by: Sooryakiran P
